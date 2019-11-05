@@ -100,7 +100,7 @@ class CustomerGroupsService {
 		return group;
 	}
 
-	public changePropertis(item: any) {
+	public changeProperties(item: any) {
 		if (item) {
 			item.id = item._id.toString();
 			delete item._id;

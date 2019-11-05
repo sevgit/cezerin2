@@ -6,8 +6,24 @@ import CustomerGroupsService from './customerGroups';
 import AuthHeader from '../../lib/auth-header';
 import security from '../../lib/security';
 
+interface IFilter {
+	_id?: ObjectID | null;
+	group_id?: ObjectID | null;
+	email?: string | null;
+	$or?: any;
+}
+
+interface IParams {
+	id?: string;
+	group_id?: string;
+	email?: string;
+	search?: string;
+	limit?: number;
+	offset?: number;
+}
+
 class CustomersService {
-	getFilter(params = {}) {
+	getFilter(params: IParams = {}): IFilter {
 		// tag
 		// gender
 		// date_created_to
@@ -17,9 +33,9 @@ class CustomersService {
 		// orders_count_to
 		// orders_count_from
 
-		const filter = {};
-		const id = parse.getObjectIDIfValid(params.id);
-		const group_id = parse.getObjectIDIfValid(params.group_id);
+		const filter: IFilter = {};
+		const id = parse.getObjectIDIfValid(params.id!);
+		const group_id = parse.getObjectIDIfValid(params.group_id!);
 
 		if (id) {
 			filter._id = new ObjectID(id);
@@ -44,10 +60,10 @@ class CustomersService {
 		return filter;
 	}
 
-	getCustomers(params = {}) {
+	getCustomers(params: IParams = {}) {
 		const filter = this.getFilter(params);
-		const limit = parse.getNumberIfPositive(params.limit) || 1000;
-		const offset = parse.getNumberIfPositive(params.offset) || 0;
+		const limit = parse.getNumberIfPositive(params.limit!) || 1000;
+		const offset = parse.getNumberIfPositive(params.offset!) || 0;
 
 		return Promise.all([
 			CustomerGroupsService.getGroups(),
@@ -72,11 +88,12 @@ class CustomersService {
 		});
 	}
 
-	getSingleCustomer(id) {
+	getSingleCustomer(id: ObjectID) {
 		if (!ObjectID.isValid(id)) {
 			return Promise.reject('Invalid identifier');
 		}
-		return this.getCustomers({ id }).then(items =>
+		let params: IParams = {id: id.toHexString() }
+		return this.getCustomers(params).then(items =>
 			items.data.length > 0 ? items.data[0] : {}
 		);
 	}
@@ -288,8 +305,8 @@ class CustomersService {
 
 			const customerGroup = customer.group_id
 				? customerGroups.find(
-						group => group.id === customer.group_id.toString()
-				  )
+					group => group.id === customer.group_id.toString()
+				)
 				: null;
 
 			customer.group_name =

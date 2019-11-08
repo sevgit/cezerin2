@@ -1,26 +1,14 @@
-import { ObjectID } from 'mongodb';
+import { ObjectID, InsertWriteOpResult, ObjectId } from 'mongodb';
 import { db } from '../../lib/mongo';
 import parse from '../../lib/parse';
 import webhooks from '../../lib/webhooks';
 import CustomerGroupsService from './customerGroups';
 import AuthHeader from '../../lib/auth-header';
 import security from '../../lib/security';
-
-interface IFilter {
-	_id?: ObjectID | null;
-	group_id?: ObjectID | null;
-	email?: string | null;
-	$or?: any;
-}
-
-interface IParams {
-	id?: string;
-	group_id?: string;
-	email?: string;
-	search?: string;
-	limit?: number;
-	offset?: number;
-}
+import { ICustomer } from './costumer';
+import { IParams } from './params';
+import { IFilter } from './filter';
+import { IAddress } from './address';
 
 class CustomersService {
 	getFilter(params: IParams = {}): IFilter {
@@ -39,10 +27,6 @@ class CustomersService {
 
 		if (id) {
 			filter._id = new ObjectID(id);
-		}
-
-		if (group_id) {
-			filter.group_id = group_id;
 		}
 
 		if (params.email) {
@@ -65,8 +49,7 @@ class CustomersService {
 		const limit = parse.getNumberIfPositive(params.limit!) || 1000;
 		const offset = parse.getNumberIfPositive(params.offset!) || 0;
 
-		return Promise.all([
-			CustomerGroupsService.getGroups(),
+		return Promise.all([			
 			db
 				.collection('customers')
 				.find(filter)
@@ -75,9 +58,9 @@ class CustomersService {
 				.limit(limit)
 				.toArray(),
 			db.collection('customers').countDocuments(filter)
-		]).then(([customerGroups, customers, customersCount]) => {
+		]).then(([customers, customersCount]) => {
 			const items = customers.map(customer =>
-				this.changeProperties(customer, customerGroups)
+				this.changeProperties(customer)
 			);
 			const result = {
 				total_count: customersCount,
@@ -88,18 +71,18 @@ class CustomersService {
 		});
 	}
 
-	getSingleCustomer(id: ObjectID) {
+	getSingleCustomer(id: string) {
 		if (!ObjectID.isValid(id)) {
 			return Promise.reject('Invalid identifier');
-		}
-		let params: IParams = {id: id.toHexString() }
+		}		
+		let params: IParams = { id: id }
 		return this.getCustomers(params).then(items =>
 			items.data.length > 0 ? items.data[0] : {}
 		);
 	}
 
-	async addCustomer(data) {
-		const customer = this.getValidDocumentForInsert(data);
+	async addCustomer(customer: ICustomer) {
+		//const customer: ICustomer = this.getValidDocumentForInsert(data);
 
 		// is email unique
 		if (customer.email && customer.email.length > 0) {
@@ -113,8 +96,8 @@ class CustomersService {
 
 		const insertResponse = await db
 			.collection('customers')
-			.insertMany([customer]);
-		const newCustomerId = insertResponse.ops[0]._id.toString();
+			.insertMany([customer]);			
+		const newCustomerId = (insertResponse.ops[0] as ICustomer)._id!.toString();
 		const newCustomer = await this.getSingleCustomer(newCustomerId);
 		await webhooks.trigger({
 			event: webhooks.events.CUSTOMER_CREATED,
@@ -123,12 +106,12 @@ class CustomersService {
 		return newCustomer;
 	}
 
-	async updateCustomer(id, data) {
+	async updateCustomer(id: string, customer: ICustomer) {
 		if (!ObjectID.isValid(id)) {
 			return Promise.reject('Invalid identifier');
 		}
 		const customerObjectID = new ObjectID(id);
-		const customer = this.getValidDocumentForUpdate(id, data);
+		//const customer: ICustomer = this.getValidDocumentForUpdate(id, data);
 
 		// is email unique
 		if (customer.email && customer.email.length > 0) {
@@ -161,7 +144,7 @@ class CustomersService {
 		return updatedCustomer;
 	}
 
-	updateCustomerStatistics(customerId, totalSpent, ordersCount) {
+	updateCustomerStatistics(customerId: ObjectID, totalSpent: number, ordersCount: number) {
 		if (!ObjectID.isValid(customerId)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -176,7 +159,7 @@ class CustomersService {
 			.updateOne({ _id: customerObjectID }, { $set: customerData });
 	}
 
-	async deleteCustomer(customerId) {
+	async deleteCustomer(customerId: string) {
 		if (!ObjectID.isValid(customerId)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -189,37 +172,10 @@ class CustomersService {
 			event: webhooks.events.CUSTOMER_DELETED,
 			payload: customer
 		});
-		return deleteResponse.deletedCount > 0;
+		return deleteResponse.deletedCount! > 0;
 	}
 
-	getValidDocumentForInsert(data) {
-		const customer = {
-			date_created: new Date(),
-			date_updated: null,
-			total_spent: 0,
-			orders_count: 0
-		};
-
-		customer.note = parse.getString(data.note);
-		customer.email = parse.getString(data.email).toLowerCase();
-		customer.mobile = parse.getString(data.mobile).toLowerCase();
-		customer.full_name = parse.getString(data.full_name);
-		customer.first_name = parse.getString(data.first_name);
-		customer.last_name = parse.getString(data.last_name);
-		customer.password = parse.getString(data.password);
-		customer.gender = parse.getString(data.gender).toLowerCase();
-		customer.group_id = parse.getObjectIDIfValid(data.group_id);
-		customer.tags = parse.getArrayIfValid(data.tags) || [];
-		customer.social_accounts =
-			parse.getArrayIfValid(data.social_accounts) || [];
-		customer.birthdate = parse.getDateIfValid(data.birthdate);
-		customer.addresses = this.validateAddresses(data.addresses);
-		customer.browser = parse.getBrowser(data.browser);
-
-		return customer;
-	}
-
-	validateAddresses(addresses) {
+	validateAddresses(addresses: IAddress[]) {
 		if (addresses && addresses.length > 0) {
 			const validAddresses = addresses.map(addressItem =>
 				parse.getCustomerAddress(addressItem)
@@ -229,110 +185,30 @@ class CustomersService {
 		return [];
 	}
 
-	getValidDocumentForUpdate(id, data) {
-		if (Object.keys(data).length === 0) {
-			return new Error('Required fields are missing');
-		}
-
-		const customer = {
-			date_updated: new Date()
-		};
-
-		if (data.note !== undefined) {
-			customer.note = parse.getString(data.note);
-		}
-
-		if (data.email !== undefined) {
-			customer.email = parse.getString(data.email).toLowerCase();
-		}
-
-		if (data.mobile !== undefined) {
-			customer.mobile = parse.getString(data.mobile).toLowerCase();
-		}
-
-		if (data.full_name !== undefined) {
-			customer.full_name = parse.getString(data.full_name);
-		}
-
-		if (data.first_name !== undefined) {
-			customer.first_name = parse.getString(data.first_name);
-		}
-
-		if (data.last_name !== undefined) {
-			customer.last_name = parse.getString(data.last_name);
-		}
-
-		if (data.password !== undefined) {
-			customer.password = parse.getString(data.password);
-		}
-
-		if (data.gender !== undefined) {
-			customer.gender = parse.getString(data.gender);
-		}
-
-		if (data.group_id !== undefined) {
-			customer.group_id = parse.getObjectIDIfValid(data.group_id);
-		}
-
-		if (data.tags !== undefined) {
-			customer.tags = parse.getArrayIfValid(data.tags) || [];
-		}
-
-		if (data.social_accounts !== undefined) {
-			customer.social_accounts =
-				parse.getArrayIfValid(data.social_accounts) || [];
-		}
-
-		if (data.birthdate !== undefined) {
-			customer.birthdate = parse.getDateIfValid(data.birthdate);
-		}
-
-		if (data.addresses !== undefined) {
-			customer.addresses = this.validateAddresses(data.addresses);
-		}
-
-		if (data.browser !== undefined) {
-			customer.browser = parse.getBrowser(data.browser);
-		}
-
-		return customer;
-	}
-
-	changeProperties(customer, customerGroups) {
+	changeProperties(customer: ICustomer) {
 		if (customer) {
-			customer.id = customer._id.toString();
+			customer.id = customer._id!.toString();
 			delete customer._id;
 
-			const customerGroup = customer.group_id
-				? customerGroups.find(
-					group => group.id === customer.group_id.toString()
-				)
-				: null;
-
-			customer.group_name =
-				customerGroup && customerGroup.name ? customerGroup.name : '';
-
 			if (customer.addresses && customer.addresses.length === 1) {
-				customer.billing = customer.shipping = customer.addresses[0];
+				customer.shipping = customer.addresses[0];
 			} else if (customer.addresses && customer.addresses.length > 1) {
-				const default_billing = customer.addresses.find(
-					address => address.default_billing
-				);
+
 				const default_shipping = customer.addresses.find(
 					address => address.default_shipping
 				);
-				customer.billing = default_billing || customer.addresses[0];
+				
 				customer.shipping = default_shipping || customer.addresses[0];
-			} else {
-				customer.billing = {};
-				customer.shipping = {};
 			}
+			// } else {				
+			// 	customer.shipping = {};
+			// }
 		}
 
 		return customer;
 	}
 
-	addAddress(customer_id, address) {
+	addAddress(customer_id: ObjectID, address: IAddress) {
 		if (!ObjectID.isValid(customer_id)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -351,8 +227,8 @@ class CustomersService {
 		);
 	}
 
-	createObjectToUpdateAddressFields(address) {
-		const fields = {};
+	createObjectToUpdateAddressFields(address: IAddress) {
+		const fields: any = {};
 
 		if (address.address1 !== undefined) {
 			fields['addresses.$.address1'] = parse.getString(address.address1);
@@ -366,12 +242,6 @@ class CustomersService {
 			fields['addresses.$.city'] = parse.getString(address.city);
 		}
 
-		if (address.country !== undefined) {
-			fields['addresses.$.country'] = parse
-				.getString(address.country)
-				.toUpperCase();
-		}
-
 		if (address.state !== undefined) {
 			fields['addresses.$.state'] = parse.getString(address.state);
 		}
@@ -382,34 +252,11 @@ class CustomersService {
 
 		if (address.postal_code !== undefined) {
 			fields['addresses.$.postal_code'] = parse.getString(address.postal_code);
-		}
-
-		if (address.full_name !== undefined) {
-			fields['addresses.$.full_name'] = parse.getString(address.full_name);
-		}
-
-		if (address.company !== undefined) {
-			fields['addresses.$.company'] = parse.getString(address.company);
-		}
-
-		if (address.tax_number !== undefined) {
-			fields['addresses.$.tax_number'] = parse.getString(address.tax_number);
-		}
-
-		if (address.coordinates !== undefined) {
-			fields['addresses.$.coordinates'] = address.coordinates;
-		}
+		}		
 
 		if (address.details !== undefined) {
 			fields['addresses.$.details'] = address.details;
-		}
-
-		if (address.default_billing !== undefined) {
-			fields['addresses.$.default_billing'] = parse.getBooleanIfValid(
-				address.default_billing,
-				false
-			);
-		}
+		}		
 
 		if (address.default_shipping !== undefined) {
 			fields['addresses.$.default_shipping'] = parse.getBooleanIfValid(
@@ -421,7 +268,7 @@ class CustomersService {
 		return fields;
 	}
 
-	updateAddress(customer_id, address_id, data) {
+	updateAddress(customer_id: ObjectID, address_id: ObjectID, data: IAddress) {
 		if (!ObjectID.isValid(customer_id) || !ObjectID.isValid(address_id)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -438,7 +285,7 @@ class CustomersService {
 		);
 	}
 
-	deleteAddress(customer_id, address_id) {
+	deleteAddress(customer_id: ObjectID, address_id: ObjectID) {
 		if (!ObjectID.isValid(customer_id) || !ObjectID.isValid(address_id)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -459,7 +306,7 @@ class CustomersService {
 		);
 	}
 
-	setDefaultBilling(customer_id, address_id) {
+	setDefaultBilling(customer_id: ObjectID, address_id: ObjectID) {
 		if (!ObjectID.isValid(customer_id) || !ObjectID.isValid(address_id)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -494,7 +341,7 @@ class CustomersService {
 			);
 	}
 
-	setDefaultShipping(customer_id, address_id) {
+	setDefaultShipping(customer_id: ObjectID, address_id: ObjectID) {
 		if (!ObjectID.isValid(customer_id) || !ObjectID.isValid(address_id)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -541,17 +388,17 @@ class CustomersService {
 		};
 
 		return fetch(`${security.storeBaseUrl}/users`, requestOptions).then(
-			handleResponse
+			this.handleResponse
 		);
 	}
 
-	handleResponse(response) {
+	handleResponse(response: Response) {
 		return response.text().then(text => {
 			const data = text && JSON.parse(text);
 			if (!response.ok) {
 				if (response.status === 401) {
 					// auto logout if 401 response returned from api
-					logout();
+					this.logout();
 					location.reload(true);
 				}
 

@@ -18,6 +18,7 @@ import PaymentGateways from '../../paymentGateways';
 import { IParams } from './params';
 import { IFilter } from './filter';
 import { IOrder } from './order';
+import { IDiscount } from './discount';
 
 const { saltRounds } = serverConfig;
 
@@ -189,7 +190,7 @@ class OrdersService {
 		);
 	}
 
-	getSingleOrder(id: ObjectID) {
+	getSingleOrder(id: ObjectID): Promise<IOrder> {
 		if (!ObjectID.isValid(id)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -200,10 +201,11 @@ class OrdersService {
 		);
 	}
 
-	getOrCreateCustomer(orderId: ObjectID) {
+	getOrCreateCustomer(orderId: ObjectID): ObjectID | Promise<string> {
 		return this.getSingleOrder(orderId).then(order => {
 			if (!order.customer_id && order.email) {
 				// find customer by email
+				
 				return CustomersService.getCustomers({ email: order.email }).then(
 					customers => {
 						const customerExists =
@@ -232,17 +234,17 @@ class OrdersService {
 							first_name: order.first_name,
 							last_name: order.last_name,
 							password: hashPassword,
-							email: order.email.toLowerCase(),
+							email: order.email!.toLowerCase(),
 							full_name: `${order.first_name} ${order.last_name}`,
 							mobile: order.mobile,
 							//browser: order.browser,
 							// addresses: customer.addresses
-							addresses: order.shipping_address
-						}).then(customer => customer.id);
+							addresses: addresses
+						}).then(customer => customer.id!);
 					}
 				);
 			}
-			return order.customer_id;
+			return order.customer_id!;
 		});
 	}
 
@@ -270,7 +272,7 @@ class OrdersService {
 				payload: updatedOrder
 			});
 		}
-		await this.updateCustomerStatistics(updatedOrder.customer_id);
+		await this.updateCustomerStatistics(updatedOrder.customer_id!);
 		return updatedOrder;
 	}
 
@@ -290,12 +292,12 @@ class OrdersService {
 		return deleteResponse.deletedCount! > 0;
 	}
 
-	parseDiscountItem(discount) {
+	parseDiscountItem(discount: IDiscount): IDiscount | null {
 		return discount
 			? {
 				id: new ObjectID(),
-				name: parse.getString(discount.name),
-				amount: parse.getNumberIfPositive(discount.amount)
+				name: parse.getString(discount.name!),
+				amount: parse.getNumberIfPositive(discount.amount!)
 			}
 			: null;
 	}
@@ -442,7 +444,7 @@ class OrdersService {
 				reject(new Error('Required fields are missing'));
 			}
 
-			const order = {
+			const order: IOrder = {
 				date_updated: new Date()
 			};
 
@@ -512,15 +514,15 @@ class OrdersService {
 			if (data.addresses !== undefined) {
 				data.addresses = parse.getOrderAddress(data.shipping_address);
 			}
-			if (data.referrer_url !== undefined) {
-				order.referrer_url = parse.getString(data.referrer_url).toLowerCase();
-			}
-			if (data.landing_url !== undefined) {
-				order.landing_url = parse.getString(data.landing_url).toLowerCase();
-			}
-			if (data.channel !== undefined) {
-				order.channel = parse.getString(data.channel);
-			}
+			// if (data.referrer_url !== undefined) {
+			// 	order.referrer_url = parse.getString(data.referrer_url).toLowerCase();
+			// }
+			// if (data.landing_url !== undefined) {
+			// 	order.landing_url = parse.getString(data.landing_url).toLowerCase();
+			// }
+			// if (data.channel !== undefined) {
+			// 	order.channel = parse.getString(data.channel);
+			// }
 			if (data.note !== undefined) {
 				order.note = parse.getString(data.note);
 			}
@@ -555,9 +557,6 @@ class OrdersService {
 			if (data.tags !== undefined) {
 				order.tags = parse.getArrayIfValid(data.tags) || [];
 			}
-			if (data.browser !== undefined) {
-				order.browser = parse.getBrowser(data.browser);
-			}
 			if (data.date_placed !== undefined) {
 				order.date_placed = parse.getDateIfValid(data.date_placed);
 			}
@@ -578,9 +577,9 @@ class OrdersService {
 		});
 	}
 
-	changeProperties(order, orderStatuses, shippingMethods, paymentMethods) {
+	changeProperties(order: IOrder, orderStatuses, shippingMethods, paymentMethods) {
 		if (order) {
-			order.id = order._id.toString();
+			order.id = order._id!.toString();
 			delete order._id;
 
 			const orderStatus =
@@ -770,7 +769,9 @@ class OrdersService {
 
 	updateCustomerStatistics(customerId: ObjectID) {
 		if (customerId) {
-			return this.getOrders({ customer_id: customerId }).then(orders => {
+			const params: IParams = {};
+			params.customer_id = customerId.toString();
+			return this.getOrders(params).then(orders => {
 				let totalSpent = 0;
 				let ordersCount = 0;
 
@@ -780,7 +781,7 @@ class OrdersService {
 							ordersCount++;
 						}
 						if (order.paid === true || order.closed === true) {
-							totalSpent += order.grand_total;
+							totalSpent += order.grand_total!;
 						}
 					}
 				}

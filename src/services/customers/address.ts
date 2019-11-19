@@ -10,4 +10,5 @@ export interface IAddress {
     postal_code?: string;
     details?: string;
     default_shipping?: boolean;
+    full_name?: string;
 }

@@ -16,7 +16,7 @@ export interface ICustomer {
 	gender?: string;	
 	social_accounts?: [];
 	birthdate?: Date;
-	addresses?: [IAddress];	
+	addresses?: IAddress[];	
 	total_spent?: number;
 	orders_count?: number;
 	shipping?: IAddress;

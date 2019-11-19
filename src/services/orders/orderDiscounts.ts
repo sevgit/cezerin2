@@ -1,15 +1,14 @@
 import { ObjectID } from 'mongodb';
 import { db } from '../../lib/mongo';
-import parse from '../../lib/parse';
 import OrdersService from './orders';
+import { IDiscount } from './discount';
 
 class OrdertDiscountsService {
-	addDiscount(order_id, data) {
+	addDiscount(order_id: ObjectID, data: IDiscount) {
 		if (!ObjectID.isValid(order_id)) {
 			return Promise.reject('Invalid identifier');
 		}
-		const orderObjectID = new ObjectID(order_id);
-		const discount = this.getValidDocumentForInsert(data);
+		const orderObjectID = new ObjectID(order_id);		
 
 		return db.collection('orders').updateOne(
 			{
@@ -17,19 +16,18 @@ class OrdertDiscountsService {
 			},
 			{
 				$push: {
-					discounts: discount
+					discounts: data
 				}
 			}
 		);
 	}
 
-	updateDiscount(order_id, discount_id, data) {
+	updateDiscount(order_id: ObjectID, discount_id: ObjectID, data: IDiscount) {
 		if (!ObjectID.isValid(order_id) || !ObjectID.isValid(discount_id)) {
 			return Promise.reject('Invalid identifier');
 		}
 		const orderObjectID = new ObjectID(order_id);
-		const discountObjectID = new ObjectID(discount_id);
-		const discount = this.getValidDocumentForUpdate(data);
+		const discountObjectID = new ObjectID(discount_id);		
 
 		return db
 			.collection('orders')
@@ -38,12 +36,12 @@ class OrdertDiscountsService {
 					_id: orderObjectID,
 					'discounts.id': discountObjectID
 				},
-				{ $set: discount }
+				{ $set: data }
 			)
 			.then(res => OrdersService.getSingleOrder(order_id));
 	}
 
-	deleteDiscount(order_id, discount_id) {
+	deleteDiscount(order_id: ObjectID, discount_id: ObjectID) {
 		if (!ObjectID.isValid(order_id) || !ObjectID.isValid(discount_id)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -65,32 +63,6 @@ class OrdertDiscountsService {
 				}
 			)
 			.then(res => OrdersService.getSingleOrder(order_id));
-	}
-
-	getValidDocumentForInsert(data) {
-		return {
-			id: new ObjectID(),
-			name: parse.getString(data.name),
-			amount: parse.getNumberIfPositive(data.amount)
-		};
-	}
-
-	getValidDocumentForUpdate(data) {
-		if (Object.keys(data).length === 0) {
-			return new Error('Required fields are missing');
-		}
-
-		const discount = {};
-
-		if (data.variant_id !== undefined) {
-			discount['discounts.$.name'] = parse.getString(data.name);
-		}
-
-		if (data.quantity !== undefined) {
-			discount['discounts.$.amount'] = parse.getNumberIfPositive(data.amount);
-		}
-
-		return discount;
 	}
 }
 

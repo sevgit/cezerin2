@@ -19,5 +19,5 @@ export interface ICustomer {
 	addresses?: [IAddress];	
 	total_spent?: number;
 	orders_count?: number;
-	shipping: IAddress;
+	shipping?: IAddress;
 }

@@ -4,9 +4,14 @@ import parse from '../../lib/parse';
 import OrdersService from './orders';
 import ProductsService from '../products/products';
 import ProductStockService from '../products/stock';
+import { IOrderItem } from './orderItem';
+import { IVariant } from './variant';
+import { IOrder } from './order';
+import { IProduct } from '../products/product';
+import { IOption } from '../products/option';
 
 class OrderItemsService {
-	async addItem(order_id, data) {
+	async addItem(order_id: ObjectID, data: IOrderItem) {
 		if (!ObjectID.isValid(order_id)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -27,7 +32,7 @@ class OrderItemsService {
 		return OrdersService.getSingleOrder(order_id);
 	}
 
-	async updateItemQuantityIfAvailable(order_id, orderItem, newItem) {
+	async updateItemQuantityIfAvailable(order_id: ObjectID, orderItem: IOrderItem, newItem: IOrderItem) {
 		const quantityNeeded = orderItem.quantity + newItem.quantity;
 		const availableQuantity = await this.getAvailableProductQuantity(
 			newItem.product_id,
@@ -42,7 +47,7 @@ class OrderItemsService {
 		}
 	}
 
-	async addNewItem(order_id, newItem) {
+	async addNewItem(order_id: ObjectID, newItem: IOrderItem) {
 		const orderObjectID = new ObjectID(order_id);
 		const availableQuantity = await this.getAvailableProductQuantity(
 			newItem.product_id,
@@ -68,7 +73,7 @@ class OrderItemsService {
 		}
 	}
 
-	async getAvailableProductQuantity(product_id, variant_id, quantityNeeded) {
+	async getAvailableProductQuantity(product_id: ObjectID, variant_id: ObjectID, quantityNeeded: number): Promise<number> {
 		const product = await ProductsService.getSingleProduct(
 			product_id.toString()
 		);
@@ -83,7 +88,8 @@ class OrderItemsService {
 			return quantityNeeded;
 		}
 		if (product.variable && variant_id) {
-			const variant = this.getVariantFromProduct(product, variant_id);
+			//ERROR NOT SOLVED
+			const variant: IVariant = this.getVariantFromProduct(product, variant_id);
 			if (variant) {
 				return variant.stock_quantity >= quantityNeeded
 					? quantityNeeded
@@ -96,13 +102,14 @@ class OrderItemsService {
 			: product.stock_quantity;
 	}
 
-	async getOrderItemIfExists(order_id, product_id, variant_id) {
+	async getOrderItemIfExists(order_id: ObjectID, product_id: ObjectID, variant_id: ObjectID) {
 		const orderObjectID = new ObjectID(order_id);
-		const order = await db.collection('orders').findOne(
+		const order: IOrder = await db.collection('orders').findOne(
 			{
 				_id: orderObjectID
 			},
 			{
+				//ERROR NOT SOLVED
 				items: 1
 			}
 		);
@@ -117,13 +124,13 @@ class OrderItemsService {
 		return null;
 	}
 
-	async updateItem(order_id, item_id, data) {
+	//ERROR NOT SOLVED - data: any?
+	async updateItem(order_id: ObjectID, item_id: ObjectID, data: any) {
 		if (!ObjectID.isValid(order_id) || !ObjectID.isValid(item_id)) {
 			return Promise.reject('Invalid identifier');
 		}
 		const orderObjectID = new ObjectID(order_id);
 		const itemObjectID = new ObjectID(item_id);
-		const item = this.getValidDocumentForUpdate(data);
 
 		if (parse.getNumberIfPositive(data.quantity) === 0) {
 			// delete item
@@ -137,7 +144,7 @@ class OrderItemsService {
 				'items.id': itemObjectID
 			},
 			{
-				$set: item
+				$set: data
 			}
 		);
 
@@ -146,7 +153,8 @@ class OrderItemsService {
 		return OrdersService.getSingleOrder(order_id);
 	}
 
-	getVariantFromProduct(product, variantId) {
+	//ERROR NOT SOLVED - review return
+	getVariantFromProduct(product: IProduct, variantId: ObjectID): IVariant | undefined | null {
 		if (product.variants && product.variants.length > 0) {
 			return product.variants.find(
 				variant => variant.id.toString() === variantId.toString()
@@ -156,7 +164,7 @@ class OrderItemsService {
 		return null;
 	}
 
-	getOptionFromProduct(product, optionId) {
+	getOptionFromProduct(product: IProduct, optionId: ObjectID) {
 		if (product.options && product.options.length > 0) {
 			return product.options.find(
 				item => item.id.toString() === optionId.toString()
@@ -166,8 +174,8 @@ class OrderItemsService {
 		return null;
 	}
 
-	getOptionValueFromProduct(product, optionId, valueId) {
-		const option = this.getOptionFromProduct(product, optionId);
+	getOptionValueFromProduct(product: IProduct, optionId: ObjectID, valueId: ObjectID) {
+		const option: IOption = this.getOptionFromProduct(product, optionId);
 		if (option && option.values && option.values.length > 0) {
 			return option.values.find(
 				item => item.id.toString() === valueId.toString()
@@ -177,17 +185,17 @@ class OrderItemsService {
 		return null;
 	}
 
-	getOptionNameFromProduct(product, optionId) {
+	getOptionNameFromProduct(product: IProduct, optionId: ObjectID) {
 		const option = this.getOptionFromProduct(product, optionId);
 		return option ? option.name : null;
 	}
 
-	getOptionValueNameFromProduct(product, optionId, valueId) {
+	getOptionValueNameFromProduct(product: IProduct, optionId: ObjectID, valueId: ObjectID) {
 		const value = this.getOptionValueFromProduct(product, optionId, valueId);
 		return value ? value.name : null;
 	}
 
-	getVariantNameFromProduct(product, variantId) {
+	getVariantNameFromProduct(product: IProduct, variantId: ObjectID) {
 		const variant = this.getVariantFromProduct(product, variantId);
 		if (variant) {
 			const optionNames = [];
@@ -209,13 +217,13 @@ class OrderItemsService {
 		return null;
 	}
 
-	async calculateAndUpdateItem(orderId, itemId) {
+	async calculateAndUpdateItem(orderId: ObjectID, itemId: ObjectID) {
 		// TODO: tax_total, discount_total
 
 		const orderObjectID = new ObjectID(orderId);
 		const itemObjectID = new ObjectID(itemId);
 
-		const order = await OrdersService.getSingleOrder(orderId);
+		const order: IOrder = await OrdersService.getSingleOrder(orderId);
 
 		if (order && order.items && order.items.length > 0) {
 			const item = order.items.find(i => i.id.toString() === itemId.toString());
@@ -234,8 +242,8 @@ class OrderItemsService {
 		}
 	}
 
-	async getCalculatedData(item) {
-		const product = await ProductsService.getSingleProduct(
+	async getCalculatedData(item: IOrderItem) {
+		const product: IProduct = await ProductsService.getSingleProduct(
 			item.product_id.toString()
 		);
 
@@ -262,7 +270,7 @@ class OrderItemsService {
 				item.variant_id
 			);
 			const variantPrice =
-				variant.price && variant.price > 0 ? variant.price : product.price;
+				variant!.price && variant!.price > 0 ? variant!.price : product.price;
 
 			if (variant) {
 				return {
@@ -297,7 +305,7 @@ class OrderItemsService {
 		};
 	}
 
-	async calculateAndUpdateAllItems(order_id) {
+	async calculateAndUpdateAllItems(order_id: ObjectID) {
 		const order = await OrdersService.getSingleOrder(order_id);
 
 		if (order && order.items) {
@@ -311,7 +319,7 @@ class OrderItemsService {
 		return null;
 	}
 
-	async deleteItem(order_id, item_id) {
+	async deleteItem(order_id: ObjectID, item_id: ObjectID) {
 		if (!ObjectID.isValid(order_id) || !ObjectID.isValid(item_id)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -335,43 +343,10 @@ class OrderItemsService {
 		return OrdersService.getSingleOrder(order_id);
 	}
 
-	getValidDocumentForInsert(data) {
-		const productImage = parse.getObjectIDIfValid(data.product_id);
-		const item = {
-			product_image: [],
-			id: new ObjectID(),
-			product_id: parse.getObjectIDIfValid(data.product_id),
-			variant_id: parse.getObjectIDIfValid(data.variant_id),
-			quantity: parse.getNumberIfPositive(data.quantity) || 1
-		};
-
-		if (data.custom_price) {
-			item.custom_price = parse.getNumberIfPositive(data.custom_price);
-		}
-
-		if (data.custom_note) {
-			item.custom_note = parse.getString(data.custom_note);
-		}
-
-		return item;
-	}
-
-	getValidDocumentForUpdate(data) {
-		if (Object.keys(data).length === 0) {
-			return new Error('Required fields are missing');
-		}
-
-		const item = {};
-
-		if (data.variant_id !== undefined) {
-			item['items.$.variant_id'] = parse.getObjectIDIfValid(data.variant_id);
-		}
-
-		if (data.quantity !== undefined) {
-			item['items.$.quantity'] = parse.getNumberIfPositive(data.quantity);
-		}
-
-		return item;
+	getValidDocumentForInsert(data: IOrderItem) {
+		data.id = new ObjectID();
+		
+		return data;
 	}
 }
 

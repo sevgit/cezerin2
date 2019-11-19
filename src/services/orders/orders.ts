@@ -15,34 +15,37 @@ import EmailTemplatesService from '../settings/emailTemplates';
 import ProductStockService from '../products/stock';
 import SettingsService from '../settings/settings';
 import PaymentGateways from '../../paymentGateways';
+import { IParams } from './params';
+import { IFilter } from './filter';
+import { IOrder } from './order';
 
 const { saltRounds } = serverConfig;
 
 class OrdersService {
-	getFilter(params = {}) {
+	getFilter(params: IParams) {
 		// TODO: sort, coupon, tag, channel
-		const filter = {};
-		const id = parse.getObjectIDIfValid(params.id);
-		const status_id = parse.getObjectIDIfValid(params.status_id);
-		const customer_id = parse.getObjectIDIfValid(params.customer_id);
+		const filter: IFilter = {};
+		const id = parse.getObjectIDIfValid(params.id!);
+		const status_id = parse.getObjectIDIfValid(params.status_id!);
+		const customer_id = parse.getObjectIDIfValid(params.customer_id!);
 		const payment_method_id = parse.getObjectIDIfValid(
-			params.payment_method_id
+			params.payment_method_id!
 		);
 		const shipping_method_id = parse.getObjectIDIfValid(
-			params.shipping_method_id
+			params.shipping_method_id!
 		);
-		const closed = parse.getBooleanIfValid(params.closed);
-		const cancelled = parse.getBooleanIfValid(params.cancelled);
-		const delivered = parse.getBooleanIfValid(params.delivered);
-		const paid = parse.getBooleanIfValid(params.paid);
-		const draft = parse.getBooleanIfValid(params.draft);
-		const hold = parse.getBooleanIfValid(params.hold);
-		const grand_total_min = parse.getNumberIfPositive(params.grand_total_min);
-		const grand_total_max = parse.getNumberIfPositive(params.grand_total_max);
-		const date_placed_min = parse.getDateIfValid(params.date_placed_min);
-		const date_placed_max = parse.getDateIfValid(params.date_placed_max);
-		const date_closed_min = parse.getDateIfValid(params.date_closed_min);
-		const date_closed_max = parse.getDateIfValid(params.date_closed_max);
+		const closed = parse.getBooleanIfValid(params.closed!, false);
+		const cancelled = parse.getBooleanIfValid(params.cancelled!, false);
+		const delivered = parse.getBooleanIfValid(params.delivered!, false);
+		const paid = parse.getBooleanIfValid(params.paid!, false);
+		const draft = parse.getBooleanIfValid(params.draft!, false);
+		const hold = parse.getBooleanIfValid(params.hold!, false);
+		const grand_total_min = parse.getNumberIfPositive(params.grand_total_min!);
+		const grand_total_max = parse.getNumberIfPositive(params.grand_total_max!);
+		const date_placed_min = parse.getDateIfValid(params.date_placed_min!);
+		const date_placed_max = parse.getDateIfValid(params.date_placed_max!);
+		const date_closed_min = parse.getDateIfValid(params.date_closed_min!);
+		const date_closed_max = parse.getDateIfValid(params.date_closed_max!);
 
 		if (id) {
 			filter._id = new ObjectID(id);
@@ -125,16 +128,16 @@ class OrdersService {
 		if (params.search) {
 			const alternativeSearch = [];
 
-			const searchAsNumber = parse.getNumberIfPositive(params.search);
+			const searchAsNumber = parse.getNumberIfPositive(params.search as number);
 			if (searchAsNumber) {
 				alternativeSearch.push({ number: searchAsNumber });
 			}
 
-			alternativeSearch.push({ first_name: new RegExp(params.search, 'i') });
-			alternativeSearch.push({ last_name: new RegExp(params.search, 'i') });
-			alternativeSearch.push({ password: new RegExp(params.search, 'i') });
-			alternativeSearch.push({ email: new RegExp(params.search, 'i') });
-			alternativeSearch.push({ mobile: new RegExp(params.search, 'i') });
+			alternativeSearch.push({ first_name: new RegExp(params.search as string, 'i') });
+			alternativeSearch.push({ last_name: new RegExp(params.search as string, 'i') });
+			alternativeSearch.push({ password: new RegExp(params.search as string, 'i') });
+			alternativeSearch.push({ email: new RegExp(params.search as string, 'i') });
+			alternativeSearch.push({ mobile: new RegExp(params.search as string, 'i') });
 			alternativeSearch.push({ $text: { $search: params.search } });
 
 			filter.$or = alternativeSearch;
@@ -143,10 +146,10 @@ class OrdersService {
 		return filter;
 	}
 
-	getOrders(params) {
+	getOrders(params: IParams) {
 		const filter = this.getFilter(params);
-		const limit = parse.getNumberIfPositive(params.limit) || 1000;
-		const offset = parse.getNumberIfPositive(params.offset) || 0;
+		const limit = parse.getNumberIfPositive(params.limit!) || 1000;
+		const offset = parse.getNumberIfPositive(params.offset!) || 0;
 
 		return Promise.all([
 			db
@@ -186,16 +189,18 @@ class OrdersService {
 		);
 	}
 
-	getSingleOrder(id) {
+	getSingleOrder(id: ObjectID) {
 		if (!ObjectID.isValid(id)) {
 			return Promise.reject('Invalid identifier');
 		}
-		return this.getOrders({ id }).then(items =>
+		const param: IParams = {};
+		param.id = id.toString();
+		return this.getOrders(param).then(items =>
 			items.data.length > 0 ? items.data[0] : {}
 		);
 	}
 
-	getOrCreateCustomer(orderId) {
+	getOrCreateCustomer(orderId: ObjectID) {
 		return this.getSingleOrder(orderId).then(order => {
 			if (!order.customer_id && order.email) {
 				// find customer by email
@@ -220,7 +225,7 @@ class OrdersService {
 								: '';
 
 						// generate password-hash
-						const salt = bcrypt.genSaltSync(saltRounds);
+						const salt = bcrypt.genSaltSync(saltRounds as number);
 						const hashPassword = bcrypt.hashSync(order.password, salt);
 
 						return CustomersService.addCustomer({
@@ -230,7 +235,7 @@ class OrdersService {
 							email: order.email.toLowerCase(),
 							full_name: `${order.first_name} ${order.last_name}`,
 							mobile: order.mobile,
-							browser: order.browser,
+							//browser: order.browser,
 							// addresses: customer.addresses
 							addresses: order.shipping_address
 						}).then(customer => customer.id);
@@ -241,15 +246,15 @@ class OrdersService {
 		});
 	}
 
-	async addOrder(data) {
+	async addOrder(data: IOrder) {
 		const order = await this.getValidDocumentForInsert(data);
 		const insertResponse = await db.collection('orders').insertMany([order]);
-		const newOrderId = insertResponse.ops[0]._id.toString();
+		const newOrderId = (insertResponse.ops[0]._id as ObjectID);
 		const newOrder = await this.getSingleOrder(newOrderId);
 		return newOrder;
 	}
 
-	async updateOrder(id, data) {
+	async updateOrder(id: ObjectID, data: IOrder) {
 		if (!ObjectID.isValid(id)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -269,7 +274,7 @@ class OrdersService {
 		return updatedOrder;
 	}
 
-	async deleteOrder(orderId) {
+	async deleteOrder(orderId: ObjectID) {
 		if (!ObjectID.isValid(orderId)) {
 			return Promise.reject('Invalid identifier');
 		}
@@ -282,7 +287,7 @@ class OrdersService {
 		const deleteResponse = await db
 			.collection('orders')
 			.deleteOne({ _id: orderObjectID });
-		return deleteResponse.deletedCount > 0;
+		return deleteResponse.deletedCount! > 0;
 	}
 
 	parseDiscountItem(discount) {
@@ -344,7 +349,7 @@ class OrdersService {
 					orderNumber = items[0].number + 1;
 				}
 
-				const order = {
+				const order: IOrder = {
 					date_created: new Date(),
 					date_placed: null,
 					date_updated: null,
@@ -431,7 +436,7 @@ class OrdersService {
 			});
 	}
 
-	getValidDocumentForUpdate(id, data) {
+	getValidDocumentForUpdate(id: ObjectID, data) {
 		return new Promise((resolve, reject) => {
 			if (Object.keys(data).length === 0) {
 				reject(new Error('Required fields are missing'));
@@ -703,7 +708,7 @@ class OrdersService {
 		]);
 	}
 
-	async checkoutOrder(orderId) {
+	async checkoutOrder(orderId: ObjectID) {
 		/*
     TODO:
     - check order exists
@@ -743,7 +748,7 @@ class OrdersService {
 		return order;
 	}
 
-	cancelOrder(orderId) {
+	cancelOrder(orderId: ObjectID) {
 		const orderData = {
 			cancelled: true,
 			date_cancelled: new Date()
@@ -754,7 +759,7 @@ class OrdersService {
 		);
 	}
 
-	closeOrder(orderId) {
+	closeOrder(orderId: ObjectID) {
 		const orderData = {
 			closed: true,
 			date_closed: new Date()
@@ -763,7 +768,7 @@ class OrdersService {
 		return this.updateOrder(orderId, orderData);
 	}
 
-	updateCustomerStatistics(customerId) {
+	updateCustomerStatistics(customerId: ObjectID) {
 		if (customerId) {
 			return this.getOrders({ customer_id: customerId }).then(orders => {
 				let totalSpent = 0;
@@ -790,7 +795,7 @@ class OrdersService {
 		return null;
 	}
 
-	async chargeOrder(orderId) {
+	async chargeOrder(orderId: ObjectID) {
 		const order = await this.getSingleOrder(orderId);
 		const isSuccess = await PaymentGateways.processOrderPayment(order);
 		return isSuccess;

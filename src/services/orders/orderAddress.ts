@@ -1,19 +1,15 @@
 import { ObjectID } from 'mongodb';
 import { db } from '../../lib/mongo';
-import parse from '../../lib/parse';
 import OrdersService from './orders';
+import { IAddress } from '../customers/address';
 
 class OrderAddressService {
-	updateBillingAddress(id, data) {
+	updateBillingAddress(id: ObjectID, data: IAddress) {
 		if (!ObjectID.isValid(id)) {
 			return Promise.reject('Invalid identifier');
 		}
 		const orderObjectID = new ObjectID(id);
-		const billing_address = this.getValidDocumentForUpdate(
-			id,
-			data,
-			'billing_address'
-		);
+		const billing_address = { id, data, target: 'billing_address' };
 
 		return db
 			.collection('orders')
@@ -26,16 +22,16 @@ class OrderAddressService {
 			.then(res => OrdersService.getSingleOrder(id));
 	}
 
-	updateShippingAddress(id, data) {
+	updateShippingAddress(id: ObjectID, data: IAddress) {
 		if (!ObjectID.isValid(id)) {
 			return Promise.reject('Invalid identifier');
 		}
 		const orderObjectID = new ObjectID(id);
-		const shipping_address = this.getValidDocumentForUpdate(
+		const shipping_address = {
 			id,
 			data,
-			'shipping_address'
-		);
+			target: 'shipping_address'
+		};
 
 		return db
 			.collection('orders')
@@ -46,26 +42,6 @@ class OrderAddressService {
 				{ $set: shipping_address }
 			)
 			.then(res => OrdersService.getSingleOrder(id));
-	}
-
-	getValidDocumentForUpdate(id, data, addressTypeName) {
-		const keys = Object.keys(data);
-		if (keys.length === 0) {
-			return new Error('Required fields are missing');
-		}
-
-		const address = {};
-
-		keys.forEach(key => {
-			const value = data[key];
-			if (key === 'coordinates' || key === 'details') {
-				address[`${addressTypeName}.${key}`] = value;
-			} else {
-				address[`${addressTypeName}.${key}`] = parse.getString(value);
-			}
-		});
-
-		return address;
 	}
 }
 
